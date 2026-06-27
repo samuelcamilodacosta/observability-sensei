@@ -16,7 +16,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: examples/node-api/package-lock.json
 
@@ -37,7 +37,7 @@ jobs:
           exit 1
 
       - name: Run script integration tests
-        run: ./examples/scripts/run-tests.sh
+        run: bash examples/scripts/run-tests.sh
 
   docker-stack:
     name: Docker stack smoke test
@@ -62,21 +62,26 @@ jobs:
       - name: Generate traffic & health check
         run: |
           for i in $(seq 1 10); do curl -sf http://localhost:3000/api/example; done
-          curl -sf http://localhost:3000/health | grep -q '"status":"ok"'
+          curl -sf http://localhost:3000/health | grep -qE '"status"[[:space:]]*:[[:space:]]*"ok"'
 
       - name: Grafana health
-        run: curl -sf http://localhost:3001/api/health | grep -q '"database":"ok"'
+        run: curl -sf http://localhost:3001/api/health | grep -qE '"database"[[:space:]]*:[[:space:]]*"ok"'
 
       - name: Jaeger UI
         run: curl -sf http://localhost:16686 | grep -qi jaeger
 
       - name: Loki ready
-        run: curl -sf http://localhost:3100/ready | grep -q ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3100/ready | grep -q ready; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
 
       - name: Production Gate against stack
-        run: |
-          chmod +x examples/scripts/*.sh
-          GATE_SOAK_SECONDS=2 ./examples/scripts/production-gate.sh
+        run: GATE_SOAK_SECONDS=2 bash examples/scripts/production-gate.sh
 
       - name: Tear down
         if: always()
