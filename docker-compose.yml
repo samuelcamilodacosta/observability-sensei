@@ -1,0 +1,86 @@
+services:
+  api:
+    build:
+      context: ./examples/node-api
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    labels:
+      logging.observability-sensei.io/service: observability-sensei-api
+    environment:
+      NODE_ENV: production
+      SERVICE_VERSION: docker-compose
+      LOG_LEVEL: info
+      HEALTH_MAX_ERROR_RATE: "0.05"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    depends_on:
+      - otel-collector
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:3000/health',(r)=>{let b='';r.on('data',(c)=>b+=c);r.on('end',()=>process.exit(r.statusCode===200&&b.includes('ok')?0:1));}).on('error',()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./stacks/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./stacks/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=7d'
+
+  loki:
+    image: grafana/loki:3.3.2
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+
+  promtail:
+    image: grafana/promtail:3.3.2
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./stacks/promtail/promtail-config.yaml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: sensei
+      GF_USERS_ALLOW_SIGN_UP: false
+    volumes:
+      - ./stacks/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./stacks/grafana/dashboards:/etc/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+      - loki
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.114.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./stacks/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4318:4318"
+    depends_on:
+      - jaeger

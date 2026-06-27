@@ -1,0 +1,38 @@
+groups:
+  - name: observability-sensei-api
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_request_errors_total[5m]))
+          /
+          sum(rate(http_requests_total[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          service: observability-sensei-api
+        annotations:
+          summary: "Error rate above 5%"
+          description: "API error rate exceeded 5% for 2 minutes. Check recent deploys."
+
+      - alert: HighLatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          service: observability-sensei-api
+        annotations:
+          summary: "p99 latency above 500ms"
+          description: "API p99 latency exceeded Production Gate threshold."
+
+      - alert: ApiTargetDown
+        expr: up{job="observability-sensei-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: observability-sensei-api
+        annotations:
+          summary: "Prometheus cannot scrape API"
+          description: "The observability-sensei-api metrics target is down."

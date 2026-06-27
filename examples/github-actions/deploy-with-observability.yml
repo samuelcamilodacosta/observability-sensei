@@ -1,0 +1,46 @@
+# Copy — see .github/workflows/deploy-with-observability.yml for active workflow
+name: Deploy with Observability
+
+on:
+  workflow_dispatch:
+
+env:
+  SERVICE_VERSION: ${{ github.sha }}
+  GATE_HEALTH_URL: http://localhost:3000/health
+  GATE_METRICS_URL: http://localhost:3000/metrics
+  GATE_MAX_ERROR_RATE: '0.05'
+  GATE_MAX_LATENCY_MS: '500'
+  GATE_SOAK_SECONDS: '3'
+
+jobs:
+  build:
+    name: Build & test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/node-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: examples/node-api/package-lock.json
+      - run: npm ci && npm test && npm run build
+
+  deploy-and-gate:
+    name: Deploy · Observe · Decide
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - working-directory: examples/node-api
+        run: npm ci && npm run build && npm start &
+      - run: |
+          chmod +x examples/scripts/*.sh
+          sleep 5
+          for i in $(seq 1 10); do curl -sf http://localhost:3000/api/example; done
+          ./examples/scripts/production-gate.sh

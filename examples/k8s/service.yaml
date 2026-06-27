@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: observability-sensei-api
+  labels:
+    app: observability-sensei-api
+spec:
+  type: ClusterIP
+  selector:
+    app: observability-sensei-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
